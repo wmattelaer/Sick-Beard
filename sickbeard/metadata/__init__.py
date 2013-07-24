@@ -19,7 +19,7 @@
 __all__ = ['generic', 'helpers', 'xbmc', 'mediabrowser', 'synology', 'ps3', 'wdtv', 'tivo', 'atv']
 
 import sys
-import xbmc, mediabrowser, synology, ps3, wdtv, tivo
+import xbmc, mediabrowser, synology, ps3, wdtv, tivo, atv
 
 def available_generators():
     return filter(lambda x: x not in ('generic', 'helpers'), __all__)

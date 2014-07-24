@@ -44,19 +44,27 @@ class ATVMetadata(generic.GenericMetadata):
     def __init__(self,
                  show_metadata=False,
                  episode_metadata=False,
-                 poster=False,
                  fanart=False,
+                 poster=False,
+                 banner=False,
                  episode_thumbnails=False,
-                 season_thumbnails=False):
+                 season_posters=False,
+                 season_banners=False,
+                 season_all_poster=False,
+                 season_all_banner=False):
 
         generic.GenericMetadata.__init__(self,
                                          show_metadata,
                                          episode_metadata,
-                                         poster,
                                          fanart,
+                                         poster,
+                                         banner,
                                          episode_thumbnails,
-                                         season_thumbnails)
-        
+                                         season_posters,
+                                         season_banners,
+                                         season_all_poster,
+                                         season_all_banner)
+	
 
         self._ep_nfo_extension = 'xml'
         self.name = 'Apple TV'
@@ -65,20 +73,39 @@ class ATVMetadata(generic.GenericMetadata):
         self.eg_episode_metadata = "Season##\\<i>filename</i>.xml"
         self.eg_fanart = "<i>not supported</i>"
         self.eg_poster = "folder.jpg"
+        self.eg_banner = "<i>not supported</i>"
         self.eg_episode_thumbnails = "<i>not supported</i>"
-        self.eg_season_thumbnails = "<i>not supported</i>"
-    
+        self.eg_season_posters = "<i>not supported</i>"
+        self.eg_season_banners = "<i>not supported</i>"
+        self.eg_season_all_poster = "<i>not supported</i>"
+        self.eg_season_all_banner = "<i>not supported</i>"
+		
     # all of the following are not supported, so do nothing
     def create_show_metadata(self, show_obj):
         pass
-    
+
+    def get_show_file_path(self, show_obj):
+        pass
+		
     def create_fanart(self, show_obj):
         pass
-    
-    def create_season_thumbs(self, show_obj):
+
+    def create_banner(self, show_obj):
+        pass
+
+    def get_episode_thumb_path(self, ep_obj):
+        pass
+
+    def create_season_posters(self, show_obj):
         pass
     
-    def get_episode_thumb_path(self, ep_obj):
+    def create_season_banners(self, ep_obj):
+        pass
+		
+    def create_season_all_poster(self, show_obj):
+        pass
+				
+    def create_season_all_banner(self, show_obj):
         pass
 
     def retrieveShowMetadata(self, dir):

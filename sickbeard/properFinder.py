@@ -22,6 +22,8 @@ import operator
 import sickbeard
 
 from sickbeard import db
+from sickbeard import exceptions
+from sickbeard.exceptions import ex
 from sickbeard import helpers, logger, show_name_helpers
 from sickbeard import providers
 from sickbeard import search
@@ -36,26 +38,12 @@ from name_parser.parser import NameParser, InvalidNameException
 
 class ProperFinder():
 
-    def __init__(self):
-        self.updateInterval = datetime.timedelta(hours=1)
-
     def run(self):
 
         if not sickbeard.DOWNLOAD_PROPERS:
             return
 
-        # look for propers every night at 1 AM
-        updateTime = datetime.time(hour=1)
-
-        logger.log(u"Checking proper time", logger.DEBUG)
-
-        hourDiff = datetime.datetime.today().time().hour - updateTime.hour
-
-        # if it's less than an interval after the update time then do an update
-        if hourDiff >= 0 and hourDiff < self.updateInterval.seconds/3600:
-            logger.log(u"Beginning the search for new propers")
-        else:
-            return
+        logger.log(u"Beginning the search for new propers")
 
         propers = self._getProperList()
 
@@ -71,17 +59,21 @@ class ProperFinder():
             if not curProvider.isActive():
                 continue
 
-            date = datetime.datetime.today() - datetime.timedelta(days=2)
+            search_date = datetime.datetime.today() - datetime.timedelta(days=2)
 
-            logger.log(u"Searching for any new PROPER releases from "+curProvider.name)
-            curPropers = curProvider.findPropers(date)
+            logger.log(u"Searching for any new PROPER releases from " + curProvider.name)
+            try:
+                curPropers = curProvider.findPropers(search_date)
+            except exceptions.AuthException, e:
+                logger.log(u"Authentication error: " + ex(e), logger.ERROR)
+                continue
 
             # if they haven't been added by a different provider than add the proper to the list
             for x in curPropers:
                 name = self._genericName(x.name)
-                
+
                 if not name in propers:
-                    logger.log(u"Found new proper: "+x.name, logger.DEBUG)
+                    logger.log(u"Found new proper: " + x.name, logger.DEBUG)
                     x.provider = curProvider
                     propers[name] = x
 
@@ -96,11 +88,11 @@ class ProperFinder():
                 myParser = NameParser(False)
                 parse_result = myParser.parse(curProper.name)
             except InvalidNameException:
-                logger.log(u"Unable to parse the filename "+curProper.name+" into a valid episode", logger.DEBUG)
+                logger.log(u"Unable to parse the filename " + curProper.name + " into a valid episode", logger.DEBUG)
                 continue
 
             if not parse_result.episode_numbers:
-                logger.log(u"Ignoring "+curProper.name+" because it's for a full season rather than specific episode", logger.DEBUG)
+                logger.log(u"Ignoring " + curProper.name + " because it's for a full season rather than specific episode", logger.DEBUG)
                 continue
 
             # populate our Proper instance
@@ -128,7 +120,7 @@ class ProperFinder():
 
                     # if it matches
                     if genericName == self._genericName(curSceneName):
-                        logger.log(u"Successful match! Result "+parse_result.series_name+" matched to show "+curShow.name, logger.DEBUG)
+                        logger.log(u"Successful match! Result " + parse_result.series_name + " matched to show " + curShow.name, logger.DEBUG)
 
                         # set the tvdbid in the db to the show's tvdbid
                         curProper.tvdbid = curShow.tvdbid
@@ -142,19 +134,28 @@ class ProperFinder():
 
             if curProper.tvdbid == -1:
                 continue
-            
+
             if not show_name_helpers.filterBadReleases(curProper.name):
-                logger.log(u"Proper "+curProper.name+" isn't a valid scene release that we want, igoring it", logger.DEBUG)
+                logger.log(u"Proper " + curProper.name + " isn't a valid scene release that we want, ignoring it", logger.DEBUG)
+                continue
+
+            show = helpers.findCertainShow(sickbeard.showList, curProper.tvdbid)
+            if not show:
+                logger.log(u"Unable to find the show with tvdbid " + str(curProper.tvdbid), logger.ERROR)
+                continue
+
+            if show.rls_ignore_words and search.filter_release_name(curProper.name, show.rls_ignore_words):
+                logger.log(u"Ignoring " + curProper.name + " based on ignored words filter: " + show.rls_ignore_words, logger.MESSAGE)
+                continue
+
+            if show.rls_require_words and not search.filter_release_name(curProper.name, show.rls_require_words):
+                logger.log(u"Ignoring " + curProper.name + " based on required words filter: " + show.rls_require_words, logger.MESSAGE)
                 continue
 
             # if we have an air-by-date show then get the real season/episode numbers
             if curProper.season == -1 and curProper.tvdbid:
-                showObj = helpers.findCertainShow(sickbeard.showList, curProper.tvdbid)
-                if not showObj:
-                    logger.log(u"This should never have happened, post a bug about this!", logger.ERROR)
-                    raise Exception("BAD STUFF HAPPENED")
 
-                tvdb_lang = showObj.lang
+                tvdb_lang = show.lang
                 # There's gotta be a better way of doing this but we don't wanna
                 # change the language value elsewhere
                 ltvdb_api_parms = sickbeard.TVDB_API_PARMS.copy()
@@ -168,7 +169,7 @@ class ProperFinder():
                     curProper.season = int(epObj["seasonnumber"])
                     curProper.episodes = [int(epObj["episodenumber"])]
                 except tvdb_exceptions.tvdb_episodenotfound:
-                    logger.log(u"Unable to find episode with date "+str(curProper.episode)+" for show "+parse_result.series_name+", skipping", logger.WARNING)
+                    logger.log(u"Unable to find episode with date " + str(curProper.episode) + " for show " + parse_result.series_name + ", skipping", logger.WARNING)
                     continue
 
             # check if we actually want this proper (if it's the right quality)
@@ -183,7 +184,7 @@ class ProperFinder():
 
             # if the show is in our list and there hasn't been a proper already added for that particular episode then add it to our list of propers
             if curProper.tvdbid != -1 and (curProper.tvdbid, curProper.season, curProper.episode) not in map(operator.attrgetter('tvdbid', 'season', 'episode'), finalPropers):
-                logger.log(u"Found a proper that we need: "+str(curProper.name))
+                logger.log(u"Found a proper that we need: " + str(curProper.name))
                 finalPropers.append(curProper)
 
         return finalPropers
@@ -204,16 +205,18 @@ class ProperFinder():
 
             # if we didn't download this episode in the first place we don't know what quality to use for the proper so we can't do it
             if len(historyResults) == 0:
-                logger.log(u"Unable to find an original history entry for proper "+curProper.name+" so I'm not downloading it.")
+                logger.log(u"Unable to find an original history entry for proper " + curProper.name + " so I'm not downloading it.")
                 continue
 
             else:
 
                 # make sure that none of the existing history downloads are the same proper we're trying to download
+                clean_proper_name = self._genericName(helpers.remove_non_release_groups(curProper.name))
                 isSame = False
+
                 for curResult in historyResults:
                     # if the result exists in history already we need to skip it
-                    if self._genericName(curResult["resource"]) == self._genericName(curProper.name):
+                    if self._genericName(helpers.remove_non_release_groups(curResult["resource"])) == clean_proper_name:
                         isSame = True
                         break
                 if isSame:
@@ -223,7 +226,7 @@ class ProperFinder():
                 # get the episode object
                 showObj = helpers.findCertainShow(sickbeard.showList, curProper.tvdbid)
                 if showObj == None:
-                    logger.log(u"Unable to find the show with tvdbid "+str(curProper.tvdbid)+" so unable to download the proper", logger.ERROR)
+                    logger.log(u"Unable to find the show with tvdbid " + str(curProper.tvdbid) + " so unable to download the proper", logger.ERROR)
                     continue
                 epObj = showObj.getEpisode(curProper.season, curProper.episode)
 
@@ -234,9 +237,7 @@ class ProperFinder():
                 result.quality = curProper.quality
 
                 # snatch it
-                downloadResult = search.snatchEpisode(result, SNATCHED_PROPER)
-                
-                return downloadResult
+                search.snatchEpisode(result, SNATCHED_PROPER)
 
     def _genericName(self, name):
-        return name.replace(".", " ").replace("-"," ").replace("_"," ").lower()
+        return name.replace(".", " ").replace("-", " ").replace("_", " ").lower()
